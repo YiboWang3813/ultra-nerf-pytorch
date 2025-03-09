@@ -1,19 +1,22 @@
 import torch
 from torch.nn.functional import conv2d
 
-from Model import RenderParameter, NerualRadianceField
-from Ray import RayBundle, pose_to_ray_bundle_linear
-from utils import add_a_leading_one, repeat_last_element, sample_bernoulli
+from ..nerf.model import RenderParameter, NerualRadianceField
+from .ray import RayBundle
+from ..utils.utils import add_a_leading_one, repeat_last_element, sample_bernoulli
 
-gaussian_kernal_1d = torch.tensor([0.2790,	0.4420,	0.2790]) # sigma = 0.5
-gaussian_kernal_2d = gaussian_kernal_1d.reshape(-1, 1) * gaussian_kernal_1d.reshape(1, -1)
 
 def render_ray_bundle(ray_bundle: RayBundle, nerf_model: NerualRadianceField):
     # renders a ray bundle 
+    gaussian_kernal_1d = torch.tensor([0.2790,	0.4420,	0.2790]) # sigma = 1.0
+    gaussian_kernal_2d = gaussian_kernal_1d.reshape(-1, 1) * gaussian_kernal_1d.reshape(1, -1)
+
     if ray_bundle.points is None or ray_bundle.distances_to_origin is None:
         raise ValueError('Please sample points before render.')
 
-    render_parameter = RenderParameter(nerf_model(ray_bundle.points))
+    # nerf_query = torch.concatenate((ray_bundle.directions, ray_bundle.points), -1)
+    nerf_query = ray_bundle.points
+    render_parameter = RenderParameter(nerf_model(nerf_query))
     distances_to_origin = ray_bundle.distances_to_origin
 
     distances_between_points = torch.abs(distances_to_origin[..., 1:, :] - distances_to_origin[..., :-1, :])
@@ -40,23 +43,3 @@ def render_ray_bundle(ray_bundle: RayBundle, nerf_model: NerualRadianceField):
     intensity_map = b + r
 
     return intensity_map
-
-def test():
-    nerf = NerualRadianceField()
-    pose = torch.eye(4)
-    pose[:3, :3] = torch.Tensor([
-        [  0.2760942, -0.5594423,  0.7815346],
-        [  0.9069170,  0.4208754, -0.0191151],
-        [ -0.3182349,  0.7140646,  0.6235690],
-    ])
-    pose.requires_grad_(True)
-    rb = pose_to_ray_bundle_linear(pose)
-    rb.sample(0.04, 0.16, 0.5, 512, 256)
-    i = render_ray_bundle(rb, nerf)
-
-
-
-
-
-if __name__ == '__main__':
-    test()

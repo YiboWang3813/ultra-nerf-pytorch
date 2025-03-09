@@ -1,47 +1,35 @@
 import torch
+from torch import nn
 from torch.nn.functional import normalize
-from utils import plot_points
-class Ray:
-
-    def __init__(self, origin, direction):
-        self.origin = origin                   # a 3D point
-        self.direction = normalize(direction, dim=0)  # a unit normal vector
-        self.points = None
-        self.distances_to_origin = None
-
-    def get_points(self, near=None, far=None, number_of_points=0):
-        # output is tensor of shape (number_of_points, 3)
-        if near is None or far is None or number_of_points == 0:
-            # use cached
-            if self.points is None:
-                raise ValueError('get_point must be called once with arguments specified before calling with default arguments.')
-            return self.points
-        # uniform sampling
-        distances_to_origin = torch.linspace(near, far, number_of_points)
-        points = self.origin.reshape(1, 3) + distances_to_origin.reshape(-1, 1) * self.direction.reshape(1, 3)
-        self.points = points
-        self.distances_to_origin = distances_to_origin
-        return self.points
-
-    def get_distances_to_origin(self):
-        if self.points is None:
-            raise ValueError('get_point must be called once before calling get_distances_to_origin')
-        assert self.distances_to_origin is not None
-        return self.distances_to_origin
-
 
 class RayBundle:
 
+    def __init__(self) -> None:
+        self.points = None
+        self.distances_to_origin = None
+        self.directions = None
+
+    def sample(self, *args, **kwargs):
+        raise NotImplementedError
+    
+    def subsample(self, slice: tuple[slice, slice]):
+        if self.points is None or self.distances_to_origin is None or self.directions is None:
+            raise RuntimeError('subsample must be called after sample')
+        self.points = self.points[slice]
+        self.distances_to_origin = self.distances_to_origin[slice]
+        self.directions = self.directions[slice]
+
+class RayBundleFan(RayBundle):
+
     def __init__(self, origin, direction, plane_normal, central_angle):
+        super().__init__()
         # Circular sector shaped ray bundle
         self.origin = origin.reshape(1, 3)                # origin of the circle
         self.central_angle = min(abs(central_angle), torch.pi)              # central angle in rad within [0, pi], defines how wide rays spread
         self.direction = normalize(direction.reshape(1, 3), dim=1)          # the center ray direction direction must be perpendicular to plane_normal 
         self.plane_normal = normalize(plane_normal.reshape(1, 3), dim=1)    # normal vector of the plane where the rays inhabit
-        self.points = None
-        self.distances_to_origin = None
 
-    def sample(self, near, far, num_points_per_ray, num_rays):
+    def sample(self, near, far, num_points_per_ray, num_rays, noisy=False, standard_deviation=5e-5):
         # sample points in a fan-shape area
         # near: distance between top most pixel to origin
         # far:  distance between bottom most pixel to origin
@@ -49,9 +37,11 @@ class RayBundle:
         # num_points_per_ray: height
         distances_to_origin = torch.linspace(near, far, num_points_per_ray)
         points = self.origin.reshape(1, 1, 3) + distances_to_origin.reshape(-1, 1, 1) * self._get_ray_directions(num_rays).reshape(1, -1, 3)
+        if noisy:
+            points += torch.normal(0, standard_deviation, points.shape, device=torch.get_default_device())
         self.points = points
+        self.directions = normalize(self.origin.reshape(1, 1, 3) - self.points, dim=-1)
         self.distances_to_origin = distances_to_origin.unsqueeze(-1).broadcast_to(points.shape[:2])
-        return self.points, self.distances_to_origin
 
     def _get_ray_directions(self, num_rays):
         ray_angles = torch.linspace(-self.central_angle / 2, self.central_angle / 2, num_rays).reshape(1, -1)
@@ -67,17 +57,16 @@ class RayBundle:
             directions = torch.concat([dirs1.flip([0]), self.direction, dirs2], 0)
         return normalize(directions, dim=1)
 
-class RayBundleLinear:
+class RayBundleLinear(RayBundle):
 
     def __init__(self, origin, direction, plane_normal):
+        super().__init__()
         # Circular sector shaped ray bundle
         self.origin = origin.reshape(1, 3)                # origin of 
         self.direction = normalize(direction.reshape(1, 3), dim=1)          # the center ray direction direction must be perpendicular to plane_normal 
         self.plane_normal = normalize(plane_normal.reshape(1, 3), dim=1)    # normal vector of the plane where the rays inhabit
         if not torch.allclose(torch.dot(self.direction.flatten(), self.plane_normal.flatten()), torch.zeros(1), atol=5e-2):
             raise ValueError(f'Direction vector and plane normal vector must be perpendicular to each other, got {self.direction} and {self.plane_normal} whose dot product is {torch.dot(self.direction.flatten(), self.plane_normal.flatten())}')
-        self.points = None
-        self.distances_to_origin = None
 
     def sample(self, near, far, width, num_points_per_ray, num_rays):
         # sample points in a fan-shape area
@@ -89,74 +78,49 @@ class RayBundleLinear:
         distances_to_origin = torch.linspace(near, far, num_points_per_ray)
         points = self._get_ray_origins(num_rays, width).reshape(1, -1, 3) + (distances_to_origin.reshape(-1, 1) * self.direction.reshape(1, 3)).reshape(-1, 1, 3)
         self.points = points
+        self.directions = normalize(self.origin.reshape(1, 1, 3) - self.points, dim=-1)
         self.distances_to_origin = distances_to_origin.unsqueeze(-1).broadcast_to(points.shape[:2])
         return self.points, self.distances_to_origin
 
     def _get_ray_origins(self, num_rays, width):
         distances = torch.linspace(-width / 2, width / 2, num_rays).reshape(-1, 1)
         line_of_origins = torch.linalg.cross(self.direction, self.plane_normal).reshape(1, 3)
-        # print(self.origin.device) c
-        # print(distances.device) g
-        # print(line_of_origins.device) c
         return self.origin + distances * line_of_origins
 
-def pose_to_ray_bundle(pose):
-    origin = pose[:3, -1]
-    rot_mat = pose[:3, :3]
-    direction = rot_mat @ torch.tensor([0, 0, 1]).reshape(-1, 1)
-    plane_normal = rot_mat @ torch.tensor([1, 0, 0]).reshape(-1, 1)
-    central_angle = torch.pi / 2
-    return RayBundle(origin, direction, plane_normal, central_angle)
-   
-def pose_to_ray_bundle_linear(pose, offset=torch.eye(4)):
-    origin = pose[:3, -1] + offset[:3, -1]
-    rot_mat = pose[:3, :3] @ offset[:3, :3]
-    d = torch.linalg.det(rot_mat)
-    if not torch.allclose(d, torch.ones_like(d), rtol=0.001):
-        raise ValueError(f'Invalid pose, determinant of the rotation matrix is {d}.')
-    direction = rot_mat @ torch.tensor([0, 0, 1], dtype=torch.float).reshape(-1, 1)
-    plane_normal = rot_mat @ torch.tensor([1, 0, 0], dtype=torch.float).reshape(-1, 1)
-    return RayBundleLinear(origin, direction, plane_normal)
+class RayBundleTUESREC(RayBundle):
 
-def test_ray():
-    o = torch.Tensor([1, 1, 0])
-    d = torch.Tensor([0, 3, 4])
-    r = Ray(o, d)
-    points = r.get_points(0, 10, 11)
-    dists = r.get_distances_to_origin()
-    print(points)
-    print(dists)
-
-def test_ray_bundle():
-    o = torch.Tensor([0, 0, 0])
-    d = torch.Tensor([1, 1, 0])
-    n = torch.Tensor([0, 0, 1])
-    rb = RayBundle(o, d, n, torch.pi / 2)
-    
-    p, dis = rb.sample(1, 10, 4, 5)
-
-    print(p.shape)
-    print(p)
-
-    dis2 = torch.linalg.norm(p - rb.origin.reshape(1, 1, 3), dim=-1)
-    assert torch.allclose(dis, dis2)
+    def __init__(self, pose):
+        super().__init__()
+        self.tool_T_img = torch.tensor([
+            [ 0.231064671309448, -0.218052035041340,  0.948189025293473, -70.7413291931152],
+            [-0.190847036221471, -0.965787272832032, -0.175591436013112, -80.6505661010742],
+            [ 0.954036962825936, -0.140386087807861, -0.264773903381482, -46.1766223907471],
+            [ 0,                  0,                  0,                   1              ],
+        ])
+        self.mm_T_pixel = torch.tensor([
+            [0.229389190673828, 0,                 0, 0],
+            [0,                 0.220979690551758, 0, 0],
+            [0,                 0,                 1, 0],
+            [0,                 0,                 0, 1],
+        ])
+        self.height = 480
+        self.width = 640
+        # [160 : 480 , 70 : 400]
+        self.pose = pose
 
 
-def test_ray_bundle_linear():
-    pose = torch.eye(4)
-    rbl = pose_to_ray_bundle_linear(pose)
-    ref, _ = rbl.sample(0, 5, 3, 5, 3)
-    pose[:3, :3] = torch.Tensor([
-        [0.7071068,  0.0000000,  0.7071068],
-        [0.0000000,  1.0000000,  0.0000000],
-        [-0.7071068,  0.0000000,  0.7071068],
-    ])
-    pose[:3, -1] = torch.Tensor([-1, 0, 0])
-    rbl2 = pose_to_ray_bundle_linear(pose)
-    points, _ = rbl2.sample(0, 5, 3, 5, 3)
-    plot_points(points, ref)
-
-
- 
-if __name__ == '__main__':
-    test_ray_bundle_linear()
+    def sample(self):
+        pixels = torch.empty((4, self.height * self.width), dtype=torch.float32) # 4 for homognous coordinate
+        x, y = torch.arange(0, self.height, dtype=torch.float32), torch.arange(0, self.width, dtype=torch.float32)
+        grid_x, grid_y = torch.meshgrid(x, y, indexing='ij')
+        pixels[0,:] = grid_x.reshape(-1)
+        pixels[1,:] = grid_y.reshape(-1)
+        pixels[2,:] = 0
+        pixels[3,:] = 1
+        world = self.pose @ self.tool_T_img @ self.mm_T_pixel @ pixels
+        world = world.reshape(4, len(x), len(y)).permute(1, 2, 0)
+        self.points = world[:, :, :3] * 1e-3
+        distances_to_origin = torch.linspace(0, self.mm_T_pixel[1, 1] * (self.height - 1), self.height)
+        self.distances_to_origin =  distances_to_origin.unsqueeze(-1).broadcast_to(self.points.shape[:2])
+        self.directions = torch.empty_like(self.points) # place holder should not be accessed
+        return self.points, self.distances_to_origin

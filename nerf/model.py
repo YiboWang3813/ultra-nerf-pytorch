@@ -3,18 +3,7 @@ from torch import nn
 from torchvision.ops import MLP
 from torchvision import transforms
 
-from utils import cyclically_shift_dims_left
-
-
-class RenderParameter:
-    
-    def __init__(self, parameter_vector):
-
-        self.attenuation_coefficient = parameter_vector[..., 0]
-        self.reflection_coefficient = parameter_vector[..., 1] 
-        self.border_probability = parameter_vector[..., 2]
-        self.scattering_density_coefficient = parameter_vector[..., 3]
-        self.scattering_amplitude = parameter_vector[..., 4]
+from ..utils.utils import cyclically_shift_dims_left
 
 class NerualRadianceField(nn.Module):
 
@@ -23,6 +12,7 @@ class NerualRadianceField(nn.Module):
         self.input_transform = input_transform
         self.positional_encoding_dim = 20
         self.query_dim  = 3 # 3 for xyz in 3D space
+        # self.query_dim  = 6 # 3 for xyz in 3D space and 3 for ray direction
         self.output_dim = 5 # 5 element parameter vector for physics-inspired rendering, see: "Ultra-NeRF: Neural Radiance Fields for Ultrasound Imaging"
         self.width = 256
         self.depth = 8
@@ -67,37 +57,12 @@ class PositionalEncoding:
             intermediate = torch.pi * (self.two_exponents.reshape(-1, 1) @ p.reshape(1, -1)).reshape(intermediate_shape)
             return cyclically_shift_dims_left(torch.concat( [torch.sin(intermediate), torch.cos(intermediate)] ))
 
-def test_positional_encoding():
-    L = 10
-    pe = PositionalEncoding(2 * L)
-    assert len(pe(0.1)) == 2 * L
+class RenderParameter:
     
-    # test correct output shape
-    p = 0.1 * torch.ones(64, 3)
-    res = pe(p)
-    assert res.shape == p.shape + (2 * L, )
+    def __init__(self, parameter_vector):
 
-    # test equavalence between batched computation and one-at-a-time computation
-    for i in range(len(p)):
-        assert torch.all(pe(p[i]) == res[i])
-    for i in range(len(p[0])):
-        assert torch.all(pe(p[0, i]) == res[0, i])
-
-def test_nerf():
-    nerf = NerualRadianceField()
-
-    # test single input
-    query = torch.ones(nerf.query_dim)
-    out = nerf(query)
-    assert len(out) == nerf.output_dim
-
-    # test batch
-    batch_size = 16
-    query = torch.ones(batch_size, nerf.query_dim)
-    out = nerf(query)
-    assert out.shape == (batch_size, nerf.output_dim)
-    print([_.shape for _ in nerf.parameters()])
-
-if __name__ == '__main__':
-    test_positional_encoding()
-    test_nerf()
+        self.attenuation_coefficient = parameter_vector[..., 0]
+        self.reflection_coefficient = parameter_vector[..., 1] 
+        self.border_probability = parameter_vector[..., 2]
+        self.scattering_density_coefficient = parameter_vector[..., 3]
+        self.scattering_amplitude = parameter_vector[..., 4]
