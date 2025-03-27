@@ -27,6 +27,7 @@ class EmulatedUSDevice(nn.Module):
             rb.subsample(self.subsample_slice)
         return render_ray_bundle(rb, self.nerf)
 
+
 class ClariusC3HD3(EmulatedUSDevice):
 
     def __init__(self, trained_model_path=None, subsample_slice=(slice(None, None, None), slice(None, None, None))) -> None:
@@ -37,14 +38,14 @@ class ClariusC3HD3(EmulatedUSDevice):
         self.central_angle = 73 * torch.pi / 180
 
     def pose_to_ray_bundle(self, pose) -> RayBundleFan:
-        origin = pose[:3, -1]
-        rot_mat = pose[:3, :3]
+        origin = pose[:3, -1] # (3, 1)
+        rot_mat = pose[:3, :3] # (3, 3) 
         d = torch.linalg.det(rot_mat)
-        if not torch.allclose(d, torch.ones_like(d), rtol=0.001):
+        if not torch.allclose(d, torch.ones_like(d), rtol=0.001): # check if the rotation matrix is orthogonal
             raise ValueError(f'Invalid pose, determinant of the rotation matrix is {d}.')
         # change direction and plane_normal if coordinate system doesnot match
-        direction = rot_mat @ torch.tensor([0, 0, 1], dtype=torch.float).reshape(-1, 1)
-        plane_normal = rot_mat @ torch.tensor([0, -1, 0], dtype=torch.float).reshape(-1, 1)
+        direction = rot_mat @ torch.tensor([0, 0, 1], dtype=torch.float).reshape(-1, 1) # (3, 1) 
+        plane_normal = rot_mat @ torch.tensor([0, -1, 0], dtype=torch.float).reshape(-1, 1) # (3, 1) 
         
         return RayBundleFan(origin, direction, plane_normal, self.central_angle)
 

@@ -30,32 +30,54 @@ class RayBundleFan(RayBundle):
         self.plane_normal = normalize(plane_normal.reshape(1, 3), dim=1)    # normal vector of the plane where the rays inhabit
 
     def sample(self, near, far, num_points_per_ray, num_rays, noisy=False, standard_deviation=5e-5):
-        # sample points in a fan-shape area
-        # near: distance between top most pixel to origin
-        # far:  distance between bottom most pixel to origin
-        # num_rays: width
-        # num_points_per_ray: height
-        distances_to_origin = torch.linspace(near, far, num_points_per_ray)
-        points = self.origin.reshape(1, 1, 3) + distances_to_origin.reshape(-1, 1, 1) * self._get_ray_directions(num_rays).reshape(1, -1, 3)
+        """ Sample points along the rays (Get all points' spatial coordinates). 
+        
+        Args:
+            near (int): distance between top most pixel to origin (unit: mm) 
+            far (int): distance between bottom most pixel to origin (unit: mm) 
+            num_points_per_ray (int): height 
+            num_rays (int): width 
+            noisy (bool): whether to add noise to the sampled points 
+            standard_deviation (float): standard deviation of the noise added to the sampled points
+        
+        Returns:
+            points (torch.Tensor): sampled points' spatial coordinates (shape: [num_points_per_ray, num_rays, 3]) 
+            directions (torch.Tensor): the unit direction vectors from all sampled points to the center (shape: [num_points_per_ray, num_rays, 3]) 
+            distances_to_origin (torch.Tensor): the distance from all sampled points to the origin (shape: [num_points_per_ray, num_rays])"""
+        distances_to_origin = torch.linspace(near, far, num_points_per_ray) # (num_points_per_ray,)
+        # follow the formula: r = o + td, where o is origin, r is ray, t is distance to origin, d is direction 
+        points = self.origin.reshape(1, 1, 3) + distances_to_origin.reshape(-1, 1, 1) * self._get_ray_directions(num_rays).reshape(1, -1, 3) # (num_points_per_ray, num_rays, 3)
         if noisy:
             points += torch.normal(0, standard_deviation, points.shape, device=torch.get_default_device())
         self.points = points
-        self.directions = normalize(self.origin.reshape(1, 1, 3) - self.points, dim=-1)
-        self.distances_to_origin = distances_to_origin.unsqueeze(-1).broadcast_to(points.shape[:2])
+        # directions from all points to the origin 
+        self.directions = normalize(self.origin.reshape(1, 1, 3) - self.points, dim=-1) # (num_points_per_ray, num_rays, 3)
+        # distances from all points to the origin 
+        self.distances_to_origin = distances_to_origin.unsqueeze(-1).broadcast_to(points.shape[:2]) # (num_points_per_ray, num_rays)
 
     def _get_ray_directions(self, num_rays):
-        ray_angles = torch.linspace(-self.central_angle / 2, self.central_angle / 2, num_rays).reshape(1, -1)
+        """ Get all rays' directions.
+        
+        Args:
+            num_rays (int): number of rays 
+        
+        Returns:
+            directions (torch.Tensor): directions of all rays, shape (num_rays, 3) """
+        ray_angles = torch.linspace(-self.central_angle / 2, self.central_angle / 2, num_rays).reshape(1, -1) # (1, num_rays)
         alphas = ray_angles[:, -(num_rays // 2):]
-        sin_alphas = torch.sin(alphas).reshape(-1, 1)
-        cos_alphas = torch.cos(alphas).reshape(-1, 1)
-        cross = torch.linalg.cross(self.direction, self.plane_normal)
-        dirs1 = sin_alphas * cross + cos_alphas * self.direction
-        dirs2 = sin_alphas * -cross + cos_alphas * self.direction
+        sin_alphas = torch.sin(alphas).reshape(-1, 1) # (num_rays // 2, 1)
+        cos_alphas = torch.cos(alphas).reshape(-1, 1) # (num_rays // 2, 1) 
+        # calculate the cross product of the center ray's direction and the plane normal to get the positive ray spread direction
+        cross = torch.linalg.cross(self.direction, self.plane_normal) # (1, 3) 
+        # compose all rays' directions in the positive axis 
+        dirs1 = sin_alphas * cross + cos_alphas * self.direction # (num_rays // 2, 3) 
+        # compose all rays' directions in the negative axis 
+        dirs2 = sin_alphas * -cross + cos_alphas * self.direction # (num_rays // 2, 3) 
         if num_rays & 1 == 0: # even
             directions = torch.concat([dirs1.flip([0]), dirs2], 0)
         else: # odd
             directions = torch.concat([dirs1.flip([0]), self.direction, dirs2], 0)
-        return normalize(directions, dim=1)
+        return normalize(directions, dim=1) # (num_rays, 3) 
 
 class RayBundleLinear(RayBundle):
 
