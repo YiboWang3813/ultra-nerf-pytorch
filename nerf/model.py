@@ -61,8 +61,9 @@ class RenderParameter:
     
     def __init__(self, parameter_vector):
 
+        # unpack the outputs of nerf model, split each to a physical parameter 
         self.attenuation_coefficient = parameter_vector[..., 0]
         self.reflection_coefficient = parameter_vector[..., 1] 
         self.border_probability = parameter_vector[..., 2]
         self.scattering_density_coefficient = parameter_vector[..., 3]
-        self.scattering_amplitude = parameter_vector[..., 4]
+        self.scattering_amplitude = parameter_vector[..., 4] # (num_points_per_ray, num_rays)

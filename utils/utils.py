@@ -23,6 +23,7 @@ def add_a_leading_one(tensor: torch.Tensor, dim=0):
     return torch.concat([one, tensor], dim=dim)
 
 def repeat_last_element(tensor: torch.Tensor, dim=0):
+    # along the <dim> axis, find the last element (row or col) in tensor, then concatenate it to the end of tensor along the <dim> axis
     dim %= len(tensor.shape)
     last_element = torch.index_select(tensor, dim=dim, index=torch.tensor([tensor.shape[dim] - 1], dtype=torch.long))
     return torch.concat([tensor, last_element], dim=dim)
@@ -45,9 +46,9 @@ def plot_points(points, ref=None):
     fig.savefig('points.png')
 
 def sample_bernoulli(probabilities_yielding_one):
-    probabilities_yielding_zero = 1 - probabilities_yielding_one
-    logits = torch.logit(torch.stack([probabilities_yielding_one, probabilities_yielding_zero], dim=-1), eps=1e-4)
-    return torch.nn.functional.gumbel_softmax(logits, tau=1e-1, hard=True)[..., 0]
+    probabilities_yielding_zero = 1 - probabilities_yielding_one # (num_points_per_ray, num_rays)
+    logits = torch.logit(torch.stack([probabilities_yielding_one, probabilities_yielding_zero], dim=-1), eps=1e-4) # (num_points_per_ray, num_rays)
+    return torch.nn.functional.gumbel_softmax(logits, tau=1e-1, hard=True)[..., 0] # (num_points_per_ray, num_rays)
 
 def pose_vector_to_matrix(poses):
     rot_mats = R.from_quat(poses[:, -4:]).as_matrix()
