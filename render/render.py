@@ -1,9 +1,9 @@
 import torch
 from torch.nn.functional import conv2d
 
-from ..nerf.model import RenderParameter, NerualRadianceField
-from .ray import RayBundle
-from ..utils.utils import add_a_leading_one, repeat_last_element, sample_bernoulli
+from nerf.model import RenderParameter, NerualRadianceField
+from render.ray import RayBundle
+from utils.utils import add_a_leading_one, repeat_last_element, sample_bernoulli
 
 
 def render_ray_bundle(ray_bundle: RayBundle, nerf_model: NerualRadianceField):

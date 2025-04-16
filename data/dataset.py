@@ -4,8 +4,8 @@ import numpy as np
 import h5py
 import os
 
-from ..utils.utils import pose_vector_to_matrix
-from ..utils.utils import TORCH_DEVICE as device
+from utils.utils import pose_vector_to_matrix
+from utils.utils import TORCH_DEVICE as device
 
 class ClariusC3HD3Dataset(Dataset):
     

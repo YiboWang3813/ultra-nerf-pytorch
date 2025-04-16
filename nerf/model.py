@@ -3,7 +3,7 @@ from torch import nn
 from torchvision.ops import MLP
 from torchvision import transforms
 
-from ..utils.utils import cyclically_shift_dims_left
+from utils.utils import cyclically_shift_dims_left
 
 class NerualRadianceField(nn.Module):
 

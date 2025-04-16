@@ -2,19 +2,19 @@ import torch
 from torch.optim import lr_scheduler
 from torch.utils.data import random_split
 
-from torch.optim.lr_scheduler import LRScheduler
+# from torch.optim.lr_scheduler import LRScheduler
 import numpy as np
 from tqdm import tqdm, trange
 import wandb
 import imageio
 
-from .utils.utils import set_torch_default_device_to_cuda_if_available, loss_function
-from .utils.utils import TORCH_DEVICE as device
-from .data.dataset import ClariusC3HD3Dataset, SyentheticDataset, TUESRECDataset
-from .render.device import ClariusC3HD3, SyentheticLiverProbe, TUESRECProbe
+from utils.utils import set_torch_default_device_to_cuda_if_available, loss_function
+from utils.utils import TORCH_DEVICE as device
+from data.dataset import ClariusC3HD3Dataset, SyentheticDataset, TUESRECDataset
+from render.device import ClariusC3HD3, SyentheticLiverProbe, TUESRECProbe
 
 def log(items: dict[str, float]):
-    use_wandb = True
+    use_wandb = False 
     if not use_wandb:
         return
     global wandb_run
@@ -70,10 +70,11 @@ def train(us_device, dataset):
 
 def main():
     set_torch_default_device_to_cuda_if_available()
-    training_dataset = ClariusC3HD3Dataset('/home/mirmi/Documents/UltraAssistant/model/dataset/Jan 16/train.h5')
-    us_device = ClariusC3HD3(subsample_slice=(slice(50, None, None), slice(None, None, None)))
-    # training_dataset = SyentheticDataset('/home/mirmi/Documents/UltraAssistant/model/ultra-nerf/data/synthetic_liver/complete_volume')
-    # us_device = SyentheticLiverProbe(subsample_slice=(slice(50, None, None), slice(None, None, None))) # Note: important to ignore first several rows in the first epoch for synthetic liver dataset
+    # training_dataset = ClariusC3HD3Dataset('/home/mirmi/Documents/UltraAssistant/model/dataset/Jan 16/train.h5')
+    # us_device = ClariusC3HD3(subsample_slice=(slice(50, None, None), slice(None, None, None)))
+    liver_path = '/raid/liujie/code_recon/data/ultrasound/synthetic_liver/l1' 
+    training_dataset = SyentheticDataset(liver_path) 
+    us_device = SyentheticLiverProbe(subsample_slice=(slice(50, None, None), slice(None, None, None))) # Note: important to ignore first several rows in the first epoch for synthetic liver dataset
     # training_dataset = TUESRECDataset('/home/mirmi/Documents/UltraAssistant/open datasets/TUES-REC/000/LH_Par_C_DtP.h5')
     # us_device = TUESRECProbe(subsample_slice=(slice(70, 400, None), slice(160, 480, None)))
     train(us_device, training_dataset)

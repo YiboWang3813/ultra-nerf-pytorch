@@ -1,3 +1,4 @@
+import os 
 import torch
 from scipy.spatial.transform import Rotation as R
 import numpy as np
@@ -66,6 +67,7 @@ def save_side_by_side_image(img1: np.ndarray, img2: np.ndarray, save_path):
         raise ValueError(f'Inputs must be at least 2D, got shape {img1.shape} instead.')
     if img1.dtype == np.float32 and img2.dtype == np.float32:
         side_by_side_image = np.concatenate([ (img1 * 255).astype(np.uint8), (img2 * 255).astype(np.uint8) ], axis=1)
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
         imageio.imsave(save_path, side_by_side_image)
     else:
         raise NotImplementedError

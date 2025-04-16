@@ -1,9 +1,9 @@
 import torch
 from torch import nn
 
-from .render import render_ray_bundle
-from .ray import RayBundle, RayBundleFan, RayBundleLinear, RayBundleTUESREC
-from ..nerf.model import NerualRadianceField
+from render.render import render_ray_bundle
+from render.ray import RayBundle, RayBundleFan, RayBundleLinear, RayBundleTUESREC
+from nerf.model import NerualRadianceField
 
 class EmulatedUSDevice(nn.Module):
 
