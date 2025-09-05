@@ -32,12 +32,12 @@ class SyentheticDataset(Dataset):
         self.images = np.load(os.path.join(filepath, 'images.npy'))
         self.images = self.images.astype(np.float32) / 255
         self.poses = np.load(os.path.join(filepath, 'poses.npy'))
-        self.poses[:, :3, -1] *= 1e-3
+        self.poses[:, :3, -1] *= 1e-3 # 对translation进行缩放 从mm到m 
 
     def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
         image = torch.from_numpy(self.images[index]).float().to(device)
         pose = torch.from_numpy(self.poses[index]).float().to(device)
-        return image, pose
+        return image, pose # (H, W), (4, 4)
     
     def __len__(self):
         return len(self.images)

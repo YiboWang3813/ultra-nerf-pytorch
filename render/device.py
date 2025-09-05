@@ -55,23 +55,26 @@ class SyentheticLiverProbe(EmulatedUSDevice):
     def __init__(self, trained_model_path=None, subsample_slice=None) -> None:
         super().__init__(trained_model_path, subsample_slice)
         near, far, width = 0, 0.14, 0.08
-        h, w = 512, 256
+        h, w = 512, 256 # image height, width 
         self.sample_parameters = (near, far, width, h, w)
         self.offset = torch.tensor([ 
             [0, 1, 0, 0],
             [0, 0, 1, 0],
             [1, 0, 0, 0],
             [0, 0, 0, 1],
-        ], dtype=torch.float)
+        ], dtype=torch.float) # 基底转换矩阵 用于将探头坐标系的x/y/z轴方向与世界坐标系的x/y/z轴方向调一致
 
     def pose_to_ray_bundle(self, pose):
-        origin = pose[:3, -1] + self.offset[:3, -1]
-        rot_mat = pose[:3, :3] @ self.offset[:3, :3]
+        origin = pose[:3, -1] + self.offset[:3, -1] # ray origin (3,)
+        rot_mat = pose[:3, :3] @ self.offset[:3, :3] # rotation matrix (3, 3)
         d = torch.linalg.det(rot_mat)
         if not (torch.allclose(d, torch.ones_like(d), rtol=0.001) or torch.allclose(d, -1 * torch.ones_like(d), rtol=0.001)):
             raise ValueError(f'Invalid pose, determinant of the rotation matrix is {d}.')
-        direction = rot_mat @ torch.tensor([0, 0, 1], dtype=torch.float).reshape(-1, 1)
-        plane_normal = rot_mat @ torch.tensor([1, 0, 0], dtype=torch.float).reshape(-1, 1)
+        # 声波传播方向 [0, 0, 1]说明厂商规定的是z方向 通过offset转换为世界坐标系的y方向 再叠加rot_mat得到这个探头的独特方向
+        direction = rot_mat @ torch.tensor([0, 0, 1], dtype=torch.float).reshape(-1, 1) # ray direction (3, 1)
+        # 成像平面法向量 [1, 0, 0]说明厂商规定的是x方向 通过offset转换为世界坐标系的z方向 再叠加rot_mat得到这个探头的独特方向
+        plane_normal = rot_mat @ torch.tensor([1, 0, 0], dtype=torch.float).reshape(-1, 1) # plane normal (3, 1)
+        # 总结 转换后 在世界坐标系下 声波沿y轴向上传播 声波的起点在x轴上排列 成像平面法向量与z方向一致 
         return RayBundleLinear(origin, direction, plane_normal)
     
 
