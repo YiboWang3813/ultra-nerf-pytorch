@@ -83,31 +83,66 @@ class RayBundleLinear(RayBundle):
 
     def __init__(self, origin, direction, plane_normal):
         super().__init__()
-        # Circular sector shaped ray bundle
-        self.origin = origin.reshape(1, 3)                # origin of 
-        self.direction = normalize(direction.reshape(1, 3), dim=1)          # the center ray direction direction must be perpendicular to plane_normal 
-        self.plane_normal = normalize(plane_normal.reshape(1, 3), dim=1)    # normal vector of the plane where the rays inhabit
+        """ 
+        Initialize the ray bundle of lieanr ultrasound probe. 
+
+        Args: 
+            origin (Tensor): the origin of ultrasound probe, shape=(3,).
+            direction (Tensor): the propagating direction of ultrasound wave, shape=(3, 1).
+            plane_normal (Tensor): the normal vector of imaging plane where ultrasound waves lie in, shape=(3, 1).
+        """
+        self.origin = origin.reshape(1, 3)                 
+        self.direction = normalize(direction.reshape(1, 3), dim=1)           
+        self.plane_normal = normalize(plane_normal.reshape(1, 3), dim=1)  
         if not torch.allclose(torch.dot(self.direction.flatten(), self.plane_normal.flatten()), torch.zeros(1), atol=5e-2):
             raise ValueError(f'Direction vector and plane normal vector must be perpendicular to each other, got {self.direction} and {self.plane_normal} whose dot product is {torch.dot(self.direction.flatten(), self.plane_normal.flatten())}')
 
     def sample(self, near, far, width, num_points_per_ray, num_rays):
-        # sample points in a fan-shape area
-        # near: distance between top most pixel to origin
-        # far:  distance between bottom most pixel to origin
-        # width: distance between left most ray and right most ray
-        # num_rays: image width
-        # num_points_per_ray: image height
-        distances_to_origin = torch.linspace(near, far, num_points_per_ray)
-        points = self._get_ray_origins(num_rays, width).reshape(1, -1, 3) + (distances_to_origin.reshape(-1, 1) * self.direction.reshape(1, 3)).reshape(-1, 1, 3)
+        """ 
+        Sample points in a rectangle area. 
+
+        Args: 
+            near (float): the near plane of ultrasound imaging depth, unit: m. 
+            far (float): the far plane of ultrasound imaging depth, unit: m.
+            width (float): the imaging width of this ultrasound probe, unit: m. 
+            num_points_per_ray (int): equals to image height, unit: pixel. 
+            num_rays (int): equals to image width, unit: pixel.
+        
+        Returns: 
+            self.points (Tensor): positions of all sampling points, shape=(num_points_per_ray, num_rays, 3)
+            self.directions (Tensor): directions from all sampling points to the origin of ultrasound probe, shape=(num_points_per_ray, num_rays, 3)
+            self.distances_to_origin (Tensor): distances from all sampling points to its own origin, shape=(num_points_per_ray, num_rays)
+        """
+        distances_to_origin = torch.linspace(near, far, num_points_per_ray) # (num_points_per_ray,)
+        # 通过函数 得到ray_origins (1, num_rays, 3)
+        # 通过和directions相乘 赋予distances_to_origin在世界坐标系中的实际位置 (num_points_per_ray, 1, 3)
+        # 广播二者 得到稠密的点坐标 (num_points_per_ray, num_rays, 3)
+        points = self._get_ray_origins(num_rays, width).reshape(1, -1, 3) + \
+                (distances_to_origin.reshape(-1, 1) * self.direction.reshape(1, 3)).reshape(-1, 1, 3)
         self.points = points
-        self.directions = normalize(self.origin.reshape(1, 1, 3) - self.points, dim=-1)
+        # 从全部points到probe origin的连线方向 (num_points_per_ray, num_rays, 3)
+        self.directions = normalize(self.origin.reshape(1, 1, 3) - self.points, dim=-1) 
+        # 对每个origin都复制一份声波传播距离distances (num_points_per_ray, num_rays)
         self.distances_to_origin = distances_to_origin.unsqueeze(-1).broadcast_to(points.shape[:2])
         return self.points, self.distances_to_origin
 
     def _get_ray_origins(self, num_rays, width):
-        distances = torch.linspace(-width / 2, width / 2, num_rays).reshape(-1, 1)
-        line_of_origins = torch.linalg.cross(self.direction, self.plane_normal).reshape(1, 3)
-        return self.origin + distances * line_of_origins
+        """ 
+        Get the origins of all rays.
+
+        Args: 
+            num_rays (int): number of rays which equals to image width.
+            width (float): imaging width of this ultrasound probe. 
+        
+        Returns: 
+            ray_origins (Tensor): the origins of all rays, shape=(num_rays, 3).
+        """
+        # 以探头为中心 均分成像宽度 得到num_rays个点
+        distances = torch.linspace(-width / 2, width / 2, num_rays).reshape(-1, 1) # (num_rays, 1)
+        # 根据右手定则 计算全部ray origins所在的x轴的方向
+        line_of_origins = torch.linalg.cross(self.direction, self.plane_normal).reshape(1, 3) # (1, 3)
+        # 方向和点距离相乘赋予distances在世界坐标系中的实际位置 再加探头origin把这些点挪到以探头为中心的两边
+        return self.origin + distances * line_of_origins # (num_rays, 3)
 
 class RayBundleTUESREC(RayBundle):
 
